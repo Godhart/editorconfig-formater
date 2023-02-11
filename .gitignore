@@ -1,3 +1,8 @@
+# All hidden
+.*
+# but following:
+!.editorconfig
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
