@@ -1,37 +1,36 @@
 asd
-    asd
-    qwe
-    zxc
-    фыв
-    чсм
+	asd	
+	qwe	 
+	zxc	  
+	фыв	   
+	чсм 	
 
-    asdc
-    qwec
-    zxcc
-    фывc
-    чсмc
+	asdc	
+	qwec	 
+	zxcc	  
+	фывc	   
+	чсмc	   	
 
-    вукеук      asd
-     йцукцй     qwe
-      ыаываx    xcv
-       фывфыв   wer
-        фывфыв  xxx
-         фывфыв xxx
-
-    вукеук      asd
-     йцукцй      qwe
-      ыаываx      xcv
-       фывфыв      wer
-        фывфыв      xxx
-         фывфыв      xxx
-
-    вукеук asd
-    йцукцй  qwe
-    ыаываx   xcv
-    фывфыв    wer
-    фывфыв     xxx
-    фывфыв      xxx
-    asd
-
+	вукеук		asd
+ 	 йцукцй		qwe
+	  ыаываx	xcv
+	   фывфыв   wer
+	 	фывфыв  xxx
+	  	 фывфыв xxx
+	
+	вукеук		asd
+ 	 йцукцй		 qwe
+  	  ыаываx	  xcv
+   	   фывфыв	   wer
+        фывфыв		xxx
+         фывфыв		 xxx
+	 
+	вукеук asd
+	йцукцй  qwe
+	ыаываx	 xcv
+	фывфыв	  wer
+	фывфыв	   xxx
+	фывфыв   	xxx
+	asd
+			
 qwe
-
