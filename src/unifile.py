@@ -11,8 +11,15 @@ except Exception as e:
     E_CONF = None
 
 
-VERSION = "1.1a.0"
+VERSION = "1.2a.0"
 VERSION_HISTORY = {
+    "1.2a.0": {
+        "Release Notes": "Require '.editorconfig' files by default",
+        "Breaking changes": [
+            "--all option should be specified explicitly to process files not mentioned in '.editorconfig'"
+            " and in case if editorconfig module is not loaded at all."
+        ],
+    },
     "1.1a.0": {
         "Release Notes": "Bugfixes, new options: `--all`, `--realign`",
         "Bugfixes":  [
@@ -381,11 +388,10 @@ def fix_indents_in_path(
     if not os.path.exists(path):
         raise ValueError(f"Path {os.path.abspath(path)} doesn't exists!")
 
-    if tab_width is not None \
-    or use_tabs is not None \
-    or trim is not None \
-    or line_endings is not None:
-        all_files = True
+    if E_CONF is None:
+        if not all_files:
+            print("Editorconfig module is not loaded. Specify all_files (--all option) to proceed.", file=sys.stderr)
+            return
 
     if os.path.isdir(path):
         fo = None
@@ -445,7 +451,10 @@ if __name__ == "__main__":
         prog = "python unifile.py",
         description= "Fix indentation chars in file or files within path according to specified rules,"
                      " trim trailing whitespaces, change files encodings and line endings as necessary."
-                     " If rules aren't specified via CLI then will try to use '.editorconfig' files or fallback to defaults"
+                     " Relies on '.editorconfig' files for options for format specification of files "
+                     " and by default processes only those that are mentioned in configs."
+                     " Certain format options may be overriden via CLI."
+                     " If no '.editorconfig' files found then fallback values are used."
                      f" Version: {VERSION}",
         epilog = "That's all, folks!",
     )
@@ -471,8 +480,10 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--realign', required=False, dest='realign', action='store_true',
                         help='Realign text so it start on tab-stops.')
     parser.add_argument('-a', '--all', required=False, dest='all_files', action='store_true',
-                        help='If no explicit rules defined, then by default scripts processes only files'
-                             ' that are mentioned in editorconfig. This option enforces to process all files. '
+                        help='By default scripts processes only files'
+                             ' that are mentioned in editorconfig. This option enforces to process all files.'
+                             ' Also in case if scripts fails to load editorconfig module, this option '
+                             ' should be specified explicitly.'
                              ' Include and Exclude options are still applicable.')
     parser.add_argument('-i', '--include', required=False, dest='include', action='append', default=None,
                         help='Pattern to include files for processing. Multiple patterns may be provided.'
@@ -484,6 +495,7 @@ if __name__ == "__main__":
                              ' If specified then takes precedence over include')
     parser.add_argument('--suggest-config', required=False, dest='suggest', action='store_true',
                         help="TODO: Fill-in missing '.editorconfig' file according to existing files (on per-folder basis)")
+    parser.add_argument('--version', action='version', version='Unifile v. '+VERSION)
     args = parser.parse_args()
     fix_indents_in_path(
         args.path,
