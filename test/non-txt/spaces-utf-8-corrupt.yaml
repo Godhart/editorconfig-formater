@@ -1,0 +1,5 @@
+description:
+   what: a yaml file to test
+  misc:
+     - different indents
+    - different extensions
