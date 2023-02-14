@@ -13,6 +13,9 @@ except Exception as e:
 
 VERSION = "1.3a.0"
 VERSION_HISTORY = {
+    "1.3a.0": {
+        "Release Notes": "Per line encoding",
+    },
     "1.2a.0": {
         "Release Notes": "Require '.editorconfig' files by default",
         "Breaking changes": [
