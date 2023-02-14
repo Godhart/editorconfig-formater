@@ -11,8 +11,18 @@ except Exception as e:
     E_CONF = None
 
 
-VERSION = "1.0.0"
+VERSION = "1.1a.0"
 VERSION_HISTORY = {
+    "1.1a.0": {
+        "Release Notes": "Bugfixes, new options: `--all`, `--realign`",
+        "Bugfixes":  [
+            "Relative path in path to sources could affect output path",
+            "Absence of editorconfig module was critical error",
+        ],
+        "Breaking changes": [
+            "--suggest-config doesn't takes args anymore, now it's just toggle"
+        ],
+    },
     "1.0.0": {
         "Release Notes": "Initial release"
     }
@@ -81,9 +91,134 @@ def fix_tabs(line, tab_width, trim):
                 spaces = ""
     return result
 
+
+def realign_text(line, use_tabs, tab_width):
+    chunks_map = []
+    spaces = 0
+    space_chars = 0
+    tabs = False
+    pos = 0
+
+    # Detect chunks of text
+    for i in range(0, len(line)):
+        if line[i] == "\t":
+            tabs = True
+            spaces += tab_width - pos % tab_width
+            pos += tab_width - pos % tab_width
+            space_chars += 1
+        elif line[i] == " ":
+            spaces += 1
+            pos += 1
+            space_chars += 1
+        else:
+            if tabs or len(chunks_map) == 0 or spaces >= tab_width:
+                if len(chunks_map) > 0:     # TODO: try to increase threshold ?
+                    prev_chunk_length = i - space_chars - chunks_map[-1]['origin']
+                    chunks_map[-1]['after']  = spaces
+                    chunks_map[-1]['value']  = line[
+                        chunks_map[-1]['origin'] :
+                        chunks_map[-1]['origin'] + prev_chunk_length
+                    ]
+                chunks_map.append({
+                    # NOTE: some of those fields are only to check under debug that things works properly
+                    'origin': i,            # Chunk start within line
+                    'size'  : None,         # Chunk size in display chars (where size of tab char == tab_width)
+                    'before': spaces,       # Display whitespaces before chunk
+                    'after' : 0,            # Display whitespaces after chunk
+                    'target': pos,          # Chunk start within result in display chars
+                    'move_right': False,    # Chunk should be moved to the right
+                    'value' : None          # All chunk's line chars
+                })
+            spaces = 0
+            space_chars = 0
+            tabs = False
+            pos += 1
+
+    assert len(chunks_map) != 0, "Something went wrong" # NOTE: every line should contain at least EOL sequence
+                                                        #       so chunks map can't be empty
+    assert spaces == 0, "Something went wrong"          # NOTE: at this stage only chunk with EOL sequence can be,
+    assert space_chars == 0, "Something went wrong"     #       so spaces and space_chars should be 0
+
+    chunks_map[-1]['value']  = line[chunks_map[-1]['origin'] : ]
+
+    # Calculate chunks sizes:
+    for chunk in chunks_map:
+        chunk['size'] = 0
+        for char in chunk['value']:
+            if char == '\t':
+                # NOTE: tab always splits text into chunks, but in case if this behavior would change,
+                # following code should be used
+                chunk['size'] += tab_width - chunk['size'] % tab_width
+            else:
+                chunk['size'] += 1
+
+    # Align chunks
+    a=1 # TODO: remove this line after debug
+    for i in range(0, len(chunks_map)):
+        prev_chunk = None
+        next_chunk = None
+        realign = False
+        chunk = chunks_map[i]
+        if i > 0:
+            prev_chunk = chunks_map[i-1]
+        if i < len(chunks_map)-1:
+            next_chunk = chunks_map[i+1]
+        pos = chunk['target']   # Current chunk's position on display
+        offs = pos % tab_width  # Chunk's misalignment
+        realign = offs != 0
+        if prev_chunk is None:
+            # It's safe and reasonable to move first chunk to the left
+            if  realign:
+                chunk['target'] = pos - offs
+        else:
+            # Try to move left if unaligned. Leave at least 'tab_width' spaces from each side
+            if realign:
+                if not chunk['move_right']:
+                    t = pos - offs
+                    if t - prev_chunk['target'] < tab_width + prev_chunk['size']:
+                        chunk['move_right'] = True
+                    else:
+                        chunk['target'] = t
+
+            # If need to move right then do it
+            if chunk['move_right']:
+                t = (prev_chunk['target'] + prev_chunk['size'] + tab_width + tab_width-1) // tab_width * tab_width
+                if t >= chunk['target']:
+                    chunk['target'] = t
+                else:
+                    if offs > 0:
+                        assert False, "Something went wrong"    # TODO: probably we shouldn't be here at all
+                        chunk['target'] = pos + tab_width - offs
+
+                # Check if it's required to move next chunk to the right
+                if next_chunk is not None:
+                    if (t + chunk['size'] + tab_width + tab_width-1) // tab_width * tab_width < next_chunk['target']:
+                        next_chunk['move_right'] = True
+
+
+    # Put chunks into resulting string
+    result = ""
+    pos = 0
+    for chunk in chunks_map:
+        assert chunk['target'] >= pos, "Something went wrong"
+        while pos < chunk['target']:
+            if use_tabs:
+                result += "\t"
+                pos += tab_width - pos % tab_width
+            else:
+                dp = (chunk['target'] - pos)
+                result += " " * dp
+                pos += dp
+        assert chunk['target'] == pos, "Something went wrong"
+        result += chunk['value']
+        pos += chunk['size']    # It's OK to do like this since sizes were calculated for aligned chunks
+
+    return result
+
+
 def fix_indents_in_file(
         file_path, output_path=None,
-        encodings=None, tab_width=None, use_tabs=None, trim=None, line_endings=None):
+        encodings=None, tab_width=None, use_tabs=None, trim=None, line_endings=None, realign=False, all_files=False):
     lines = None
     last_error = None
     encoding = None
@@ -100,6 +235,11 @@ def fix_indents_in_file(
             options = E_CONF[0](file_path)
         except E_CONF[1]:
             options = {}
+    else:
+        options = {}
+
+    if E_CONF is not None and not all_files and len(options) == 0:
+        return suggest
 
     if 'charset' in options:
         encoding = options['charset']
@@ -181,9 +321,18 @@ def fix_indents_in_file(
     result = []
     for l in lines:
         if use_tabs:
-            result.append(fix_tabs(l, tab_width, trim))
+            o_l = fix_tabs(l, tab_width, trim)
         else:
-            result.append(fix_spaces(l, tab_width, trim))
+            o_l = fix_spaces(l, tab_width, trim)
+        result.append(o_l)
+
+    if realign:
+        to_realign = result
+        result = []
+        # TODO: try to analyze adjacent lines and get 2D chunks
+        for l in to_realign:
+            o_l = realign_text(l, use_tabs, tab_width)
+            result.append(o_l)
 
     if output_path is not None:
         os.makedirs(os.path.split(output_path)[0], exist_ok=True)
@@ -228,9 +377,15 @@ def _best_suggestions(vals):
 
 def fix_indents_in_path(
         path, output_path=None, encodings=None, tab_width=None, use_tabs=None, trim=None, line_endings=None,
-        include=None, exclude=None, suggest=False):
+        include=None, exclude=None, suggest=False, realign=False, all_files=False):
     if not os.path.exists(path):
         raise ValueError(f"Path {os.path.abspath(path)} doesn't exists!")
+
+    if tab_width is not None \
+    or use_tabs is not None \
+    or trim is not None \
+    or line_endings is not None:
+        all_files = True
 
     if os.path.isdir(path):
         fo = None
@@ -252,10 +407,14 @@ def fix_indents_in_path(
                     suggestions[file_ext].append({})
                     continue
                 if output_path is not None:
-                    fo = os.path.abspath(os.path.join(output_path, root, f))
+                    if root == path:
+                        fo = os.path.abspath(os.path.join(output_path, f))
+                    else:
+                        fo = os.path.abspath(os.path.join(output_path, root[len(path)+1:], f))
                 suggestions[file_ext].append(
                     fix_indents_in_file(
-                        os.path.abspath(os.path.join(root, f)), fo, encodings, tab_width, use_tabs, trim, line_endings)
+                        os.path.abspath(os.path.join(root, f)), fo, encodings, tab_width, use_tabs, trim, line_endings,
+                        realign, all_files)
                 )
             if suggest:
                 ecp = os.path.join(root, '.editorconfig')
@@ -309,6 +468,12 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--encoding', required=False, dest='encodings', action='append', default=None,
                         help='Encoding to open files with. Multiple encodings may be provided in order of precedence.'
                             f' Fallbacks to {", ".join(ENCODINGS)}')
+    parser.add_argument('-r', '--realign', required=False, dest='realign', action='store_true',
+                        help='Realign text so it start on tab-stops.')
+    parser.add_argument('-a', '--all', required=False, dest='all_files', action='store_true',
+                        help='If no explicit rules defined, then by default scripts processes only files'
+                             ' that are mentioned in editorconfig. This option enforces to process all files. '
+                             ' Include and Exclude options are still applicable.')
     parser.add_argument('-i', '--include', required=False, dest='include', action='append', default=None,
                         help='Pattern to include files for processing. Multiple patterns may be provided.'
                              ' If omitted then all are included by default'
@@ -317,7 +482,7 @@ if __name__ == "__main__":
                         help='Pattern to exclude files from processing. Multiple patterns may be provided.'
                              ' If omitted then no files excluded (except \'hidden\').'
                              ' If specified then takes precedence over include')
-    parser.add_argument('--suggest-config', required=False, dest='suggest', default='false', choices=['true', 'false'],
+    parser.add_argument('--suggest-config', required=False, dest='suggest', action='store_true',
                         help="TODO: Fill-in missing '.editorconfig' file according to existing files (on per-folder basis)")
     args = parser.parse_args()
     fix_indents_in_path(
@@ -330,5 +495,7 @@ if __name__ == "__main__":
         [args.line_endings, None][args.line_endings == 'auto'],
         args.include,
         args.exclude,
-        args.suggest == 'true'
+        args.suggest,
+        args.realign,
+        args.all_files,
     )
