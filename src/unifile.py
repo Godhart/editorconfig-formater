@@ -11,7 +11,7 @@ except Exception as e:
     E_CONF = None
 
 
-VERSION = "1.2a.0"
+VERSION = "1.3a.0"
 VERSION_HISTORY = {
     "1.2a.0": {
         "Release Notes": "Require '.editorconfig' files by default",
@@ -160,7 +160,6 @@ def realign_text(line, use_tabs, tab_width):
                 chunk['size'] += 1
 
     # Align chunks
-    a=1 # TODO: remove this line after debug
     for i in range(0, len(chunks_map)):
         prev_chunk = None
         next_chunk = None
@@ -230,6 +229,7 @@ def fix_indents_in_file(
     last_error = None
     encoding = None
     suggest = {}
+    line_break = None
     no_last_line_break = False
 
     if not os.path.exists(file_path):
@@ -257,24 +257,63 @@ def fix_indents_in_file(
     if encodings is None:
         encodings = ENCODINGS
 
-    for en in encodings:
+    encoding_index = None
+
+    for i in range(0, 1):
         f = None
         try:
             f = open(file_path, "rb")
-            text = f.read().decode(encoding=en)
+            # Per line decoding since some times there are mixed encodings within file %)
+            fb = f.read()
             lines = None
-            for line_break in ('\r\n', '\n', '\r'):
-                if line_break in text:
-                    lines = [l + '\n' for l in text.split(line_break)]
+            for lb in (b'\r\n', b'\n', b'\r'):
+                if lb in fb:
+                    line_break = lb.decode()
                     break
-            if lines is None:
-                line_break = '\n'
-                lines = [text + '\n']
-            no_last_line_break = text[-len(line_break):] != line_break
+
+            if line_break is None:
+                line_break = b'\n'
+
+            fb_left = fb
+            lines = []
+            while True:
+                line = None
+
+                try:
+                    next_lb = fb_left.index(lb)
+                    line_raw = fb_left[:next_lb]
+                    fb_left = fb_left[next_lb + len(lb):]
+                except Exception as e:
+                    line_raw = fb_left
+                    fb_left = None
+                    no_last_line_break = True
+
+                for eid in range(0, len(encodings)):
+                    try:
+                        line = line_raw.decode(encodings[eid])
+                        if encoding_index is None or eid > encoding_index:
+                            # Store encoding with max id (it's assumed that most specific encodings are in the end of list)
+                            # In case if there is no output encoding specification then most specific encoding would be used
+                            # for result
+                            encoding_index = eid
+                        break
+                    except Exception as e:
+                        last_error = e
+
+                if line is None:
+                    raise e
+
+                lines.append(line + "\n")
+                if fb_left is None or len(fb_left) == 0:
+                    break
+
             f.close()
             if encoding is None:
-                encoding = en
-                suggest['charset'] = en
+                if encoding_index is not None:
+                    encoding = encodings[encoding_index]
+                    suggest['charset'] = encoding
+                else:
+                    encoding = encodings[0]
         except Exception as e:
             if f is not None:
                 f.close()
@@ -346,7 +385,7 @@ def fix_indents_in_file(
     else:
         output_path = file_path
     with open(output_path, "wb") as f:
-        if len(text) > 0:
+        if len(fb) > 0:
             if line_endings is not None:
                 line_break = line_endings
             o_text = line_break.join([l[:-1] for l in result])
