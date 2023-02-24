@@ -1,6 +1,6 @@
-# Unifile
+# Editorconfig formater
 
-A python script to unify your files indents, encoding, line endings according to editorconfig file
+A python script to reformat your files indents, encoding, line endings according to editorconfig file
 and/or specified via CLI rules.
 
 
